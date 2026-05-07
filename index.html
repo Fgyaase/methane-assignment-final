@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Methane Molecule CH4</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+    }
+  </style>
+</head>
+
+<body>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x111111);
+
+  const camera = new THREE.PerspectiveCamera(
+    45,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    1000
+  );
+  camera.position.set(0, 4, 8);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  document.body.appendChild(renderer.domElement);
+
+  // Inline orbit controls (replaces THREE.OrbitControls which was removed after r134)
+  let isDragging = false;
+  let lastX = 0, lastY = 0;
+  let spherical = { theta: 0.3, phi: 1.2, r: 9 };
+
+  function updateCamera() {
+    camera.position.x = spherical.r * Math.sin(spherical.phi) * Math.sin(spherical.theta);
+    camera.position.y = spherical.r * Math.cos(spherical.phi);
+    camera.position.z = spherical.r * Math.sin(spherical.phi) * Math.cos(spherical.theta);
+    camera.lookAt(0, 1.8, 0);
+  }
+  updateCamera();
+
+  renderer.domElement.addEventListener('mousedown', e => {
+    isDragging = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
+  });
+  window.addEventListener('mouseup', () => isDragging = false);
+  window.addEventListener('mousemove', e => {
+    if (!isDragging) return;
+    spherical.theta -= (e.clientX - lastX) * 0.01;
+    spherical.phi = Math.max(0.2, Math.min(Math.PI - 0.2, spherical.phi - (e.clientY - lastY) * 0.01));
+    lastX = e.clientX;
+    lastY = e.clientY;
+    updateCamera();
+  });
+  renderer.domElement.addEventListener('wheel', e => {
+    spherical.r = Math.max(4, Math.min(20, spherical.r + e.deltaY * 0.02));
+    updateCamera();
+  });
+
+  // Group to hold the molecule so it rotates independently of the plane
+  const methaneGroup = new THREE.Group();
+  scene.add(methaneGroup);
+
+  const carbonMaterial = new THREE.MeshPhongMaterial({ color: 0xff4444, shininess: 80 });
+  const hydrogenMaterial = new THREE.MeshPhongMaterial({ color: 0x4488ff, shininess: 80 });
+  const bondMaterial = new THREE.MeshPhongMaterial({ color: 0xdddddd, shininess: 50 });
+
+  // Carbon atom (red sphere)
+  const carbon = new THREE.Mesh(new THREE.SphereGeometry(0.65, 32, 32), carbonMaterial);
+  carbon.position.set(0, 1.8, 0);
+  carbon.castShadow = true;
+  methaneGroup.add(carbon);
+
+  function createHydrogen(position) {
+    const h = new THREE.Mesh(new THREE.SphereGeometry(0.32, 32, 32), hydrogenMaterial);
+    h.position.copy(position);
+    h.castShadow = true;
+    methaneGroup.add(h);
+  }
+
+  function createBond(startPoint, endPoint) {
+    const direction = new THREE.Vector3().subVectors(endPoint, startPoint);
+    const length = direction.length();
+    const bond = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, length, 16), bondMaterial);
+    const midpoint = new THREE.Vector3().addVectors(startPoint, endPoint).multiplyScalar(0.5);
+    bond.position.copy(midpoint);
+    const quaternion = new THREE.Quaternion();
+    quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().normalize());
+    bond.quaternion.copy(quaternion);
+    bond.castShadow = true;
+    methaneGroup.add(bond);
+  }
+
+  // Tetrahedral hydrogen positions
+  const carbonPosition = carbon.position.clone();
+  const bondDistance = 1.75;
+
+  const hydrogenDirections = [
+    new THREE.Vector3(1, 1, 1),
+    new THREE.Vector3(-1, -1, 1),
+    new THREE.Vector3(-1, 1, -1),
+    new THREE.Vector3(1, -1, -1)
+  ];
+
+  hydrogenDirections.forEach(direction => {
+    direction.normalize();
+    const hydrogenPosition = carbonPosition.clone().add(direction.multiplyScalar(bondDistance));
+    createHydrogen(hydrogenPosition);
+    createBond(carbonPosition, hydrogenPosition);
+  });
+
+  // Green ground plane
+  const plane = new THREE.Mesh(
+    new THREE.PlaneGeometry(12, 12),
+    new THREE.MeshPhongMaterial({ color: 0x226622, side: THREE.DoubleSide })
+  );
+  plane.rotation.x = -Math.PI / 2;
+  plane.position.y = 0;
+  plane.receiveShadow = true;
+  scene.add(plane);
+
+  // Lights
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
+  scene.add(ambientLight);
+
+  const spotLight = new THREE.SpotLight(0xffffff, 1.4);
+  spotLight.position.set(4, 8, 5);
+  spotLight.castShadow = true;
+  spotLight.shadow.mapSize.width = 2048;
+  spotLight.shadow.mapSize.height = 2048;
+  scene.add(spotLight);
+
+  const pointLight = new THREE.PointLight(0xffffff, 0.8);
+  pointLight.position.set(-4, 5, 4);
+  scene.add(pointLight);
+
+  // Text label
+  const labelCanvas = document.createElement('canvas');
+  labelCanvas.width = 512;
+  labelCanvas.height = 128;
+  const ctx = labelCanvas.getContext('2d');
+  ctx.fillStyle = 'white';
+  ctx.font = 'bold 52px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('Methane CH\u2084', labelCanvas.width / 2, 80);
+
+  const labelTexture = new THREE.CanvasTexture(labelCanvas);
+  const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTexture }));
+  label.position.set(0, 0.15, 2.8);
+  label.scale.set(3.2, 0.8, 1);
+  scene.add(label);
+
+  // Animation loop — molecule rotates, plane stays still
+  function animate() {
+    requestAnimationFrame(animate);
+    if (!isDragging) {
+      methaneGroup.rotation.y += 0.01;
+      methaneGroup.rotation.x += 0.003;
+    }
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  // Responsive resize
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+</script>
+</body>
+</html>
